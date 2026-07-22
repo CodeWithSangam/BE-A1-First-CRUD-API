@@ -4,6 +4,12 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
+class TaskCreate(BaseModel):
+    id:int
+    title:str
+    done:bool
+
+
 
 list_of_obj = [
      { 'id': 1, 'title': 'Buy groceries', 'done': False },
@@ -40,3 +46,18 @@ async def read_item(id:int):
             return items
     return HTTPException(status_code=404, detail=f"Task {id} not found")
 
+
+# Stage 3: create with validation
+@app.push('/tasks',status_code=201)
+async def create_task(item:TaskCreate):
+    if not item.title.strip():
+        return HTTPException(status_code=400,detail="Title can'nt be empty")
+
+    new_id = max((task['id'] for task in list_of_obj),default=0)+1
+    new_obj = {
+        'id':new_id,
+        'title':item.title,
+        'done':False
+    }
+    list_of_obj.append(new_obj)
+    return new_obj
