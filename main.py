@@ -76,7 +76,7 @@ async def update_task(id:int, item:TaskUpdate):
                 return items
     raise HTTPException (status_code=404, detail=f"task {id} not found")
 
-
+# DELETE
 @app.delete('/tasks/{id}',status_code=204)
 async def delete_task(id:int):
     for items in list_of_dict:
