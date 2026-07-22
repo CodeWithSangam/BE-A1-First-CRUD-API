@@ -81,7 +81,8 @@ FastAPI generates this automatically from the code — no extra setup required. 
 
 **Screenshot:**
 <img width="1178" height="702" alt="image" src="https://github.com/user-attachments/assets/c9b3434d-47db-4162-924a-c2110bb6feaa" />
-
+![alt text](image.png)
+![alt text](image-1.png)
 ---
 
 ## Frontend
