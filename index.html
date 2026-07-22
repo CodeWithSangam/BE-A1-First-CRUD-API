@@ -1,0 +1,231 @@
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Task API — Playground</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --panel: #171a23;
+    --card: #1e222c;
+    --ink: #e8e9ec;
+    --dim: #8b8f9c;
+    --acc: #4ade80;
+    --warn: #facc15;
+    --blue: #60a5fa;
+    --err: #f87171;
+    --border: #2a2e3a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+    max-width: 900px;
+    margin: 40px auto;
+    padding: 0 20px;
+  }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .sub { color: var(--dim); font-size: 13px; margin-bottom: 24px; }
+
+  form {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+  input[type="text"] {
+    flex: 1;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--ink);
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-size: 14px;
+  }
+  button {
+    background: var(--acc);
+    color: #0f1117;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  button.danger { background: var(--err); }
+  button.danger, .task button { padding: 6px 10px; font-size: 12px; }
+
+  ul { list-style: none; padding: 0; margin: 0 0 28px 0; }
+  .task {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    padding: 10px 12px;
+    border-radius: 6px;
+    margin-bottom: 8px;
+  }
+  .task span { flex: 1; font-size: 14px; }
+  .done { text-decoration: line-through; color: var(--dim); }
+
+  .panes {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .pane {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    min-height: 160px;
+  }
+  .pane h4 {
+    margin: 0 0 10px 0;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--dim);
+  }
+  .mono {
+    font-family: "SF Mono", Consolas, monospace;
+    font-size: 12.5px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.6;
+  }
+  .method {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #0f1117;
+  }
+  .m-GET { background: var(--acc); }
+  .m-POST { background: var(--warn); }
+  .m-PUT { background: var(--blue); }
+  .m-DELETE { background: var(--err); }
+  .status-ok { color: var(--acc); }
+  .status-bad { color: var(--err); }
+</style>
+</head>
+<body>
+
+  <h1>My Tasks</h1>
+  <div class="sub">Connected live to <span class="mono">http://localhost:8000</span></div>
+
+  <form id="taskForm">
+    <input type="text" id="titleInput" placeholder="New task title" required>
+    <button type="submit">Add Task</button>
+  </form>
+
+  <ul id="taskList"></ul>
+
+  <div class="panes">
+    <div class="pane">
+      <h4>Request — what was sent</h4>
+      <div id="reqPane" class="mono">—</div>
+    </div>
+    <div class="pane">
+      <h4>Response — what came back</h4>
+      <div id="resPane" class="mono">—</div>
+    </div>
+  </div>
+
+<script>
+  const API_URL = "http://localhost:8000";
+  const taskList = document.getElementById("taskList");
+  const reqPane = document.getElementById("reqPane");
+  const resPane = document.getElementById("resPane");
+
+  function methodBadge(method) {
+    return `<span class="method m-${method}">${method}</span>`;
+  }
+
+  function showRequest(method, url, body) {
+    let lines = [`${methodBadge(method)} ${url}`, "Host: localhost:8000"];
+    if (body !== undefined) {
+      lines.push("Content-Type: application/json", "", JSON.stringify(body, null, 2));
+    }
+    reqPane.innerHTML = lines.join("\n");
+  }
+
+  function showResponse(status, ok, body) {
+    const statusClass = ok ? "status-ok" : "status-bad";
+    resPane.innerHTML =
+      `<span class="${statusClass}">HTTP ${status}</span>\n\n` +
+      JSON.stringify(body, null, 2);
+  }
+
+  async function callApi(method, path, body) {
+    const url = `${API_URL}${path}`;
+    showRequest(method, path, body);
+
+    const options = { method };
+    if (body !== undefined) {
+      options.headers = { "Content-Type": "application/json" };
+      options.body = JSON.stringify(body);
+    }
+
+    const response = await fetch(url, options);
+    let data = null;
+    if (response.status !== 204) {
+      data = await response.json();
+    }
+    showResponse(response.status, response.ok, data ?? { note: "204 No Content" });
+    return { response, data };
+  }
+
+  async function loadTasks() {
+    const { data } = await callApi("GET", "/tasks");
+    taskList.innerHTML = "";
+    (data || []).forEach(task => {
+      const li = document.createElement("li");
+      li.className = "task";
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = task.done;
+      checkbox.addEventListener("change", () => toggleDone(task));
+
+      const span = document.createElement("span");
+      span.textContent = task.title;
+      if (task.done) span.classList.add("done");
+
+      const deleteBtn = document.createElement("button");
+      deleteBtn.textContent = "Delete";
+      deleteBtn.className = "danger";
+      deleteBtn.addEventListener("click", () => deleteTask(task.id));
+
+      li.appendChild(checkbox);
+      li.appendChild(span);
+      li.appendChild(deleteBtn);
+      taskList.appendChild(li);
+    });
+  }
+
+  document.getElementById("taskForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const titleInput = document.getElementById("titleInput");
+    const title = titleInput.value;
+    await callApi("POST", "/tasks", { title });
+    titleInput.value = "";
+    loadTasks();
+  });
+
+  async function deleteTask(id) {
+    await callApi("DELETE", `/tasks/${id}`);
+    loadTasks();
+  }
+
+  async function toggleDone(task) {
+    await callApi("PUT", `/tasks/${task.id}`, { title: task.title, done: !task.done });
+    loadTasks();
+  }
+
+  loadTasks();
+</script>
+
+</body>
+</html> -->
