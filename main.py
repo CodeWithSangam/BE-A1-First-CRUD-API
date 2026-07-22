@@ -4,14 +4,8 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
-class TaskCreate(BaseModel):
-    id:int
-    title:str
-    done:bool
 
-
-
-list_of_obj = [
+list_of_dict = [
      { 'id': 1, 'title': 'Buy groceries', 'done': False },
 
      { 'id': 2, 'title': 'Walk the dog', 'done': True },
@@ -37,27 +31,57 @@ async def health_check():
 # Stage 2: read endpoints with 404
 @app.get('/tasks')
 async def tasks():
-    return list_of_obj
+    return list_of_dict
 
 @app.get('/tasks/{id}')
 async def read_item(id:int):
-    for items in list_of_obj:
+    for items in list_of_dict:
         if items['id'] == id:
             return items
-    return HTTPException(status_code=404, detail=f"Task {id} not found")
+    raise HTTPException(status_code=404, detail=f"Task {id} not found")
 
 
 # Stage 3: create with validation
-@app.push('/tasks',status_code=201)
+class TaskCreate(BaseModel):
+    title:str
+
+@app.post('/tasks',status_code=201)
 async def create_task(item:TaskCreate):
     if not item.title.strip():
-        return HTTPException(status_code=400,detail="Title can'nt be empty")
+        raise HTTPException(status_code=400,detail="Title can'nt be empty")
 
-    new_id = max((task['id'] for task in list_of_obj),default=0)+1
+    new_id = max((task['id'] for task in list_of_dict),default=0)+1
     new_obj = {
         'id':new_id,
         'title':item.title,
         'done':False
     }
-    list_of_obj.append(new_obj)
+    list_of_dict.append(new_obj)
     return new_obj
+
+
+# UPDATE & DELETE
+# Stage 4: full CRUD
+class TaskUpdate(BaseModel):
+    title:str
+    done:bool
+
+
+@app.put('/tasks/{id}')
+async def update_task(id:int, item:TaskUpdate):
+    for items in list_of_dict:
+            if items['id'] == id:
+                items['title'] = item.title
+                items['done'] = item.done
+                return items
+    raise HTTPException (status_code=404, detail=f"task {id} not found")
+
+
+@app.delete('/tasks/{id}',status_code=204)
+async def delete_task(id:int):
+    for items in list_of_dict:
+        if items['id'] == id:
+            list_of_dict.remove(items)
+            return 
+    raise HTTPException(status_code=404,detail=f'Task {id} not found')
+
