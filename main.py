@@ -16,7 +16,7 @@ cursor.execute("SELECT COUNT (*) FROM tasks")
 row_count = cursor.fetchone()[0]
 if row_count == 0:
     cursor.executemany("INSERT INTO tasks (title, done) VALUES (?, ?)",[("Buy groceries",0)
-                   ,("Walk the dog",1),("Read a book",0)])
+                ,("Walk the dog",1),("Read a book",0)])
 connection.commit() 
 
 app = FastAPI()
@@ -48,15 +48,24 @@ async def health_check():
 # Stage 2: read endpoints with 404
 @app.get('/tasks')
 async def tasks():
-    return list_of_dict
+    cursor.execute("SELECT * FROM tasks")
+    tasks_list = cursor.fetchall()
+    result = []
+    for row in tasks_list:
+        row = {"id": row[0], "title": row[1], "done": bool(row[2])}
+        result.append(row)
+    return result
+
 
 @app.get('/tasks/{id}')
 async def read_item(id:int):
-    for items in list_of_dict:
-        if items['id'] == id:
-            return items
-    raise HTTPException(status_code=404, detail=f"Task {id} not found")
-
+    cursor.execute("SELECT * FROM tasks WHERE id = ?",(id,))
+    row = cursor.fetchone()
+    if row is None:
+        raise HTTPException(status_code=404,detail=f'Task {id} not found.')
+    else:   
+        row = {"id": row[0], "title": row[1], "done": bool(row[2])}
+    return row
 
 # Stage 3: create with validation
 class TaskCreate(BaseModel):
@@ -64,6 +73,7 @@ class TaskCreate(BaseModel):
 
 @app.post('/tasks',status_code=201)
 async def create_task(item:TaskCreate):
+    cursor.execute("INSERT INTO tasks (id,title,done) VALUES (?,?,?)",(item,))
     if not item.title.strip():
         raise HTTPException(status_code=400,detail="Title can'nt be empty")
 
