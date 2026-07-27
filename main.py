@@ -21,15 +21,6 @@ connection.commit()
 
 app = FastAPI()
 
-
-list_of_dict = [
-     { 'id': 1, 'title': 'Buy groceries', 'done': False },
-
-     { 'id': 2, 'title': 'Walk the dog', 'done': True },
-
-     { 'id': 3, 'title': 'Read a book', 'done': False }
-
-]
 # Stage 0 : Hello Server
 # @app.get('/')
 # async def root(status_code=200):
