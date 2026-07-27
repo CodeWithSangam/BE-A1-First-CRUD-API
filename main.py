@@ -73,18 +73,12 @@ class TaskCreate(BaseModel):
 
 @app.post('/tasks',status_code=201)
 async def create_task(item:TaskCreate):
-    cursor.execute("INSERT INTO tasks (id,title,done) VALUES (?,?,?)",(item,))
     if not item.title.strip():
-        raise HTTPException(status_code=400,detail="Title can'nt be empty")
-
-    new_id = max((task['id'] for task in list_of_dict),default=0)+1
-    new_obj = {
-        'id':new_id,
-        'title':item.title,
-        'done':False
-    }
-    list_of_dict.append(new_obj)
-    return new_obj
+        raise HTTPException(status_code=400, detail="Title can't be empty")
+    cursor.execute("INSERT INTO tasks (title, done) VALUES (?, ?)",(item.title, 0 ))
+    connection.commit()
+    new_id = cursor.lastrowid
+    return {"id": new_id, "title": item.title, "done": False}
 
 
 # UPDATE & DELETE
