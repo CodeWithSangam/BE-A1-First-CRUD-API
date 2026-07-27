@@ -90,19 +90,18 @@ class TaskUpdate(BaseModel):
 
 @app.put('/tasks/{id}')
 async def update_task(id:int, item:TaskUpdate):
-    for items in list_of_dict:
-            if items['id'] == id:
-                items['title'] = item.title
-                items['done'] = item.done
-                return items
-    raise HTTPException (status_code=404, detail=f"task {id} not found")
-
+                cursor.execute("UPDATE tasks SET title = ?, done = ? WHERE id = ?",(item.title,item.done,id))
+                connection.commit()
+                if cursor.rowcount == 0:
+                     raise HTTPException (status_code=404, detail=f"task {id} not found")
+                return {"id": id, "title": item.title, "done": item.done}
+    
 # DELETE
 @app.delete('/tasks/{id}',status_code=204)
 async def delete_task(id:int):
-    for items in list_of_dict:
-        if items['id'] == id:
-            list_of_dict.remove(items)
+            cursor.execute("DELETE FROM tasks WHERE id = ?",(id,))
+            connection.commit()
+            if cursor.rowcount == 0:
+                raise HTTPException(status_code=404,detail=f'Task {id} not found')
             return 
-    raise HTTPException(status_code=404,detail=f'Task {id} not found')
 
