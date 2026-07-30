@@ -90,7 +90,7 @@ http://localhost:8000/docs
 
 FastAPI generates this automatically from the code — no extra setup required. Every endpoint listed above can be tested directly from this page using the **"Try it out"** button.
 
-**Screenshot:** *![alt text](image-2.png)*
+**Screenshot:** ![alt text](image-2.png)
 
 ---
 
@@ -120,7 +120,7 @@ This returned only the tasks marked as completed — confirming the `done` colum
 
 **Observation:** Changing data through DB Browser and then calling `GET /tasks` from the API — with no server restart — reflected the change instantly. There's no "syncing" step; the API and DB Browser both read the exact same file, so there's really just one source of truth.
 
-**Screenshot:** *![alt text](image-3.png)*
+**Screenshot:** ![alt text](image-3.png)
 
 ---
 

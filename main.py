@@ -38,14 +38,39 @@ async def health_check():
 
 # Stage 2: read endpoints with 404
 @app.get('/tasks')
-async def tasks():
-    cursor.execute("SELECT * FROM tasks")
+async def tasks(search: str = None, done: bool = None):
+    conditions = []
+    values = []
+
+    if search:
+        conditions.append("title LIKE ?")
+        values.append(f"%{search}%")
+
+    if done is not None:
+        conditions.append("done = ?")
+        values.append(done)
+
+    query = "SELECT * FROM tasks"
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " ORDER BY title"
+    
+    cursor.execute(query, tuple(values))
     tasks_list = cursor.fetchall()
+
     result = []
     for row in tasks_list:
         row = {"id": row[0], "title": row[1], "done": bool(row[2])}
         result.append(row)
     return result
+  
+@app.get('/stats')
+async def get_stats():
+    cursor.execute("SELECT COUNT(*) FROM tasks")
+    total = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM tasks WHERE done = 1")
+    done = cursor.fetchone()[0]
+    return {"total": total, "done": done, "open": total - done}
 
 
 @app.get('/tasks/{id}')
