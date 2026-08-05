@@ -1,23 +1,43 @@
 from fastapi import FastAPI
 from fastapi import HTTPException
 from pydantic import BaseModel
-import sqlite3
+from dotenv import load_dotenv
+import os
 
-connection = sqlite3.connect("tasks.db",check_same_thread=False)
+# Load variables from the .env file into the environment (so os.getenv can read them)
+load_dotenv()
+import psycopg
+
+# Connect to Postgres using the connection string stored in .env (DATABASE_URL)
+connection = psycopg.connect(os.getenv("DATABASE_URL"))
+# Create a cursor - this is what we use to run SQL commands and fetch results
 cursor = connection.cursor()
+
+# Create the tasks table only if it doesn't already exist
+# SERIAL = auto-incrementing integer (Postgres equivalent of SQLite's INTEGER PRIMARY KEY)
+# BOOLEAN = a real true/false type (Postgres has this natively, unlike SQLite's 0/1)
 cursor.execute("""
-    CREATE TABLE IF NOT EXISTS tasks(
-    id INTEGER PRIMARY KEY,
+    CREATE TABLE IF NOT EXISTS tasks (
+    id SERIAL PRIMARY KEY,
     title TEXT,
-    done INTEGER
-    )
+    done BOOLEAN
+)
 """)
+
+# Check how many rows already exist in the table
 cursor.execute("SELECT COUNT (*) FROM tasks")
-row_count = cursor.fetchone()[0]
+row_count = cursor.fetchone()[0]  # fetchone() returns a tuple like (0,), so we grab index 0
+
+# Only seed example tasks if the table is empty - prevents duplicates on every restart
+# Note: psycopg uses %s as the placeholder, NOT ? (that was SQLite's syntax)
 if row_count == 0:
-    cursor.executemany("INSERT INTO tasks (title, done) VALUES (?, ?)",[("Buy groceries",0)
-                ,("Walk the dog",1),("Read a book",0)])
-connection.commit() 
+    cursor.executemany(
+        "INSERT INTO tasks (title, done) VALUES (%s, %s)",
+        [("Buy groceries", False), ("Walk the dog", True), ("Read a book", False)]
+    )
+
+# Save changes permanently to the database (required after INSERT/UPDATE/DELETE)
+connection.commit()
 
 app = FastAPI()
 
@@ -39,85 +59,105 @@ async def health_check():
 # Stage 2: read endpoints with 404
 @app.get('/tasks')
 async def tasks(search: str = None, done: bool = None):
+    # These lists will collect WHERE conditions and their matching values dynamically
     conditions = []
     values = []
 
+    # If a search term was given, add a LIKE condition (%s placeholder, not ?)
     if search:
-        conditions.append("title LIKE ?")
+        conditions.append("title LIKE %s")
         values.append(f"%{search}%")
 
+    # If a 'done' filter was given (True or False, not just "not empty"), add an equality condition
     if done is not None:
-        conditions.append("done = ?")
+        conditions.append("done = %s")
         values.append(done)
 
+    # Start with the base query, then attach WHERE clauses only if any conditions were collected
     query = "SELECT * FROM tasks"
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
     query += " ORDER BY title"
-    
-    cursor.execute(query, tuple(values))
-    tasks_list = cursor.fetchall()
 
+    # Run the query, passing all collected values as one tuple
+    cursor.execute(query, tuple(values))
+    tasks_list = cursor.fetchall()  # returns a list of tuples, one tuple per row
+
+    # Convert each raw tuple into a readable dictionary for the JSON response
     result = []
     for row in tasks_list:
         row = {"id": row[0], "title": row[1], "done": bool(row[2])}
         result.append(row)
     return result
-  
+
 @app.get('/stats')
 async def get_stats():
     cursor.execute("SELECT COUNT(*) FROM tasks")
     total = cursor.fetchone()[0]
-    cursor.execute("SELECT COUNT(*) FROM tasks WHERE done = 1")
+    # done = 1 also works in Postgres, but done = TRUE is more correct for a real boolean column
+    cursor.execute("SELECT COUNT(*) FROM tasks WHERE done = TRUE")
     done = cursor.fetchone()[0]
     return {"total": total, "done": done, "open": total - done}
 
 
 @app.get('/tasks/{id}')
-async def read_item(id:int):
-    cursor.execute("SELECT * FROM tasks WHERE id = ?",(id,))
-    row = cursor.fetchone()
+async def read_item(id: int):
+    # %s placeholder instead of ? - this is the psycopg/Postgres syntax
+    cursor.execute("SELECT * FROM tasks WHERE id = %s", (id,))
+    row = cursor.fetchone()  # returns one tuple, or None if no match
     if row is None:
-        raise HTTPException(status_code=404,detail=f'Task {id} not found.')
-    else:   
+        raise HTTPException(status_code=404, detail=f'Task {id} not found.')
+    else:
         row = {"id": row[0], "title": row[1], "done": bool(row[2])}
     return row
 
 # Stage 3: create with validation
 class TaskCreate(BaseModel):
-    title:str
+    title: str
 
-@app.post('/tasks',status_code=201)
-async def create_task(item:TaskCreate):
+@app.post('/tasks', status_code=201)
+async def create_task(item: TaskCreate):
+    # Validate BEFORE touching the database
     if not item.title.strip():
         raise HTTPException(status_code=400, detail="Title can't be empty")
-    cursor.execute("INSERT INTO tasks (title, done) VALUES (?, ?)",(item.title, 0 ))
+
+    # RETURNING id asks Postgres to hand back the id it just generated for this row
+    # (psycopg has no cursor.lastrowid like sqlite3 does - RETURNING is the Postgres way)
+    cursor.execute(
+        "INSERT INTO tasks (title, done) VALUES (%s, %s) RETURNING id",
+        (item.title, False)
+    )
+    new_id = cursor.fetchone()[0]  # fetch the id that RETURNING gave back
     connection.commit()
-    new_id = cursor.lastrowid
+
     return {"id": new_id, "title": item.title, "done": False}
 
 
 # UPDATE & DELETE
 # Stage 4: full CRUD
 class TaskUpdate(BaseModel):
-    title:str
-    done:bool
+    title: str
+    done: bool
 
 
 @app.put('/tasks/{id}')
-async def update_task(id:int, item:TaskUpdate):
-                cursor.execute("UPDATE tasks SET title = ?, done = ? WHERE id = ?",(item.title,item.done,id))
-                connection.commit()
-                if cursor.rowcount == 0:
-                     raise HTTPException (status_code=404, detail=f"task {id} not found")
-                return {"id": id, "title": item.title, "done": item.done}
-    
-# DELETE
-@app.delete('/tasks/{id}',status_code=204)
-async def delete_task(id:int):
-            cursor.execute("DELETE FROM tasks WHERE id = ?",(id,))
-            connection.commit()
-            if cursor.rowcount == 0:
-                raise HTTPException(status_code=404,detail=f'Task {id} not found')
-            return 
+async def update_task(id: int, item: TaskUpdate):
+    # Order of values must match order of %s placeholders: title, done, id
+    cursor.execute(
+        "UPDATE tasks SET title = %s, done = %s WHERE id = %s",
+        (item.title, item.done, id)
+    )
+    connection.commit()
+    # rowcount tells us how many rows were affected - 0 means the id didn't exist
+    if cursor.rowcount == 0:
+        raise HTTPException(status_code=404, detail=f"task {id} not found")
+    return {"id": id, "title": item.title, "done": item.done}
 
+# DELETE
+@app.delete('/tasks/{id}', status_code=204)
+async def delete_task(id: int):
+    cursor.execute("DELETE FROM tasks WHERE id = %s", (id,))
+    connection.commit()
+    if cursor.rowcount == 0:
+        raise HTTPException(status_code=404, detail=f'Task {id} not found')
+    return
