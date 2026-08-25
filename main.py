@@ -1,12 +1,51 @@
 from fastapi import FastAPI
 from fastapi import HTTPException
 from pydantic import BaseModel
+from supabase import create_client
 from dotenv import load_dotenv
 import os
 
-# Load variables from the .env file into the environment (so os.getenv can read them)
 load_dotenv()
 import psycopg
+
+app = FastAPI()
+
+url = os.getenv("SUPABASE_URL")
+key = os.getenv("SUPABASE_KEY")
+
+supabase = create_client(url, key)
+
+
+class AuthCredentials(BaseModel):
+    email: str
+    password: str
+
+
+@app.post('/auth/signup', status_code=201)
+async def sign_up(item: AuthCredentials):
+    if not item.email.strip() or not item.password.strip():
+        raise HTTPException(status_code=400, detail="Email and password required")
+    response = supabase.auth.sign_up({"email": item.email, "password": item.password})
+    # fix: response.user is Supabase's own object, not a plain dict.
+    # Converting it to a dict keeps the response safe and predictable as JSON.
+    return {"user": response.user.model_dump()}
+
+
+@app.post('/auth/login')
+async def sign_in(item: AuthCredentials):
+    if not item.email.strip() or not item.password.strip():
+        raise HTTPException(status_code=400, detail="Email and password required")
+    try:
+        response = supabase.auth.sign_in_with_password({"email": item.email, "password": item.password})
+        # fix: the old code returned the whole 'response' object twice under two keys.
+        # We actually need to reach INSIDE response.session to get the two real token strings.
+        return {
+            "access_token": response.session.access_token,
+            "refresh_token": response.session.refresh_token
+        }
+    except Exception as e:
+        raise HTTPException(status_code=401, detail="Invalid login credentials")
+
 
 # Connect to Postgres using the connection string stored in .env (DATABASE_URL)
 connection = psycopg.connect(os.getenv("DATABASE_URL"))
@@ -39,7 +78,6 @@ if row_count == 0:
 # Save changes permanently to the database (required after INSERT/UPDATE/DELETE)
 connection.commit()
 
-app = FastAPI()
 
 # Stage 0 : Hello Server
 # @app.get('/')
