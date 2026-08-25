@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from supabase import create_client
 from dotenv import load_dotenv
 import os
-
+# helps in loading the env file
 load_dotenv()
 import psycopg
 
