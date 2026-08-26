@@ -57,8 +57,16 @@ async def get_profile(authorization: str = Header(None)):
     token = authorization.split("Bearer ")[1]
     if not token:
         raise HTTPException(status_code=401, detail="Access token required")
-    # only confirm for now ki token mil gya
-    return {"message":"Token received (not yet verified)","token_preview":token[:10]}
+    
+    try:
+        response = supabase.auth.get_user(token)
+        return {
+            "id": response.user.id,
+            "email": response.user.email,
+            "ac_created_date": response.user.created_at
+        }
+    except Exception as e:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 # Connect to Postgres using the connection string stored in .env (DATABASE_URL)
 connection = psycopg.connect(os.getenv("DATABASE_URL"))
 # Create a cursor - this is what we use to run SQL commands and fetch results
