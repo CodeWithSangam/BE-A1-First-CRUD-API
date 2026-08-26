@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from supabase import create_client
 from dotenv import load_dotenv
 import os
-from fastapi import Header
+from fastapi import Header, Depends
 # helps in loading the env file
 load_dotenv()
 import psycopg
@@ -21,6 +21,27 @@ class AuthCredentials(BaseModel):
     email: str
     password: str
 
+async def get_current_user(authorization: str = Header(None)):
+    if authorization is None or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Access token required")
+    token = authorization.split("Bearer ",1)[1]
+    if not token:
+        raise HTTPException(status_code=401, detail="Access token required")
+        
+    try:
+        response = supabase.auth.get_user(token)
+        return {
+                "id": response.user.id,
+                "email": response.user.email,
+                "ac_created_date": response.user.created_at
+            }
+    except Exception as e:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    
+@app.post('/auth/logout',status_code=204)
+async def logout(current_user = Depends(get_current_user)):
+    supabase.auth.sign_out()
+    return
 
 @app.post('/auth/signup', status_code=201)
 async def sign_up(item: AuthCredentials):
@@ -51,22 +72,11 @@ async def public_info():
     return { "message": "Welcome stranger! This info is public." }
 
 @app.get('/protected/profile')
-async def get_profile(authorization: str = Header(None)):
-    if authorization is None or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Access token required")
-    token = authorization.split("Bearer ")[1]
-    if not token:
-        raise HTTPException(status_code=401, detail="Access token required")
-    
-    try:
-        response = supabase.auth.get_user(token)
-        return {
-            "id": response.user.id,
-            "email": response.user.email,
-            "ac_created_date": response.user.created_at
-        }
-    except Exception as e:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+async def get_profile(current_user = Depends(get_current_user)):
+    return current_user
+@app.get('/protected/dashboard')
+async def get_dashboard(current_user = Depends(get_current_user)):
+    return {"message": f"Welcome, {current_user['email']}"}
 # Connect to Postgres using the connection string stored in .env (DATABASE_URL)
 connection = psycopg.connect(os.getenv("DATABASE_URL"))
 # Create a cursor - this is what we use to run SQL commands and fetch results
