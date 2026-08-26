@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from supabase import create_client
 from dotenv import load_dotenv
 import os
+from fastapi import Header
 # helps in loading the env file
 load_dotenv()
 import psycopg
@@ -45,8 +46,19 @@ async def sign_in(item: AuthCredentials):
         }
     except Exception as e:
         raise HTTPException(status_code=401, detail="Invalid login credentials")
+@app.get('/public/info')
+async def public_info():
+    return { "message": "Welcome stranger! This info is public." }
 
-
+@app.get('/protected/profile')
+async def get_profile(authorization: str = Header(None)):
+    if authorization is None or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Access token required")
+    token = authorization.split("Bearer ")[1]
+    if not token:
+        raise HTTPException(status_code=401, detail="Access token required")
+    # only confirm for now ki token mil gya
+    return {"message":"Token received (not yet verified)","token_preview":token[:10]}
 # Connect to Postgres using the connection string stored in .env (DATABASE_URL)
 connection = psycopg.connect(os.getenv("DATABASE_URL"))
 # Create a cursor - this is what we use to run SQL commands and fetch results
