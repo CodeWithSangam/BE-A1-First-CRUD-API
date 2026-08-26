@@ -1,11 +1,12 @@
-# Task API — FlyRank Internship (Assignments A1, A2 & A3)
+# Task API + Auth — FlyRank Internship (Assignments A1, A2, A3 & A4)
 
-A CRUD (Create, Read, Update, Delete) API for managing a to-do list, built with **FastAPI** (Python). The API now runs against a real **PostgreSQL** database inside a **Docker container**, and the entire stack — app + database — starts with a single command.
+A CRUD (Create, Read, Update, Delete) API for managing a to-do list, built with **FastAPI** (Python), backed by **PostgreSQL** running in **Docker**, and secured with **Supabase Auth** — sign up, log in, log out, and protected routes guarded by verified JSON Web Tokens (JWTs).
 
-This project has gone through three storage upgrades as part of the FlyRank Backend AI Engineering internship track:
-- **A1:** Build your first CRUD API — in-memory storage (a Python list).
-- **A2:** Connecting your CRUD to the database — migrated to a SQLite file.
-- **A3 (this stage):** Containerize your stack — migrated to PostgreSQL, running in Docker, orchestrated with Docker Compose.
+This project has evolved through four assignments in the FlyRank Backend AI Engineering internship track:
+- **A1:** Build your first CRUD API — in-memory storage.
+- **A2:** Connecting your CRUD to the database — migrated to SQLite.
+- **A3:** Containerize your stack — migrated to PostgreSQL, running in Docker, orchestrated with Docker Compose.
+- **A4 (this stage):** Auth · Login & protect — added Supabase Auth, JWT verification, and protected routes.
 
 ---
 
@@ -16,105 +17,155 @@ This project has gone through three storage upgrades as part of the FlyRank Back
 - **Server:** Uvicorn
 - **Database:** PostgreSQL 16, running in a Docker container
 - **Database driver:** psycopg
-- **Orchestration:** Docker Compose (one command starts the app and the database together)
-- **Config:** `.env` file (git-ignored) for secrets, `python-dotenv` to load it
+- **Identity Provider:** Supabase Auth (accounts, password hashing, JWT issuing/verification)
+- **Orchestration:** Docker Compose
+- **Config:** `.env` file (git-ignored) for all secrets
 
 ---
 
-## How to Run — One Command
+## How to Run
 
-Clone the repository, then:
+### 1. Set up Supabase
+1. Create a free account at [supabase.com](https://supabase.com) and spin up a new project.
+2. In your Supabase Dashboard, go to **Project Settings → API** and copy your **Project URL** and **anon key**.
+3. Go to **Authentication → Sign In / Providers → Email** and turn **"Confirm email" off** (so signups can log in immediately, for practice purposes).
 
+### 2. Configure environment variables
+Copy `.env.example` to `.env` and fill in your own values:
 ```
-cp .env.example .env
-docker compose up
+SUPABASE_URL=your_project_url
+SUPABASE_KEY=your_anon_key
+DATABASE_URL=postgres://postgres:dev@db:5432/tasks
+PORT=8000
 ```
+`.env` is git-ignored and should **never** be committed — it holds your real Supabase keys and database credentials.
 
-That's it. Docker Compose will:
-1. Build the app's image from the `Dockerfile`.
-2. Pull and start a PostgreSQL 16 container.
-3. Wait for the database to be genuinely ready (via a healthcheck) before starting the app.
-4. Create the `tasks` table automatically if it doesn't exist.
-5. Seed 3 example tasks — but only on the very first run.
+### 3. Start everything with one command
+```
+docker compose up --build
+```
+This builds the app image, starts PostgreSQL, waits for the database to be genuinely ready (via a healthcheck), and starts the API — all connected automatically.
 
-The API will be available at `http://localhost:8000`.
+The API will be available at `http://localhost:8000`, with interactive docs at `http://localhost:8000/docs`.
 
 To stop everything:
 ```
 docker compose down
 ```
 
-Your data survives this — a Docker **volume** keeps the database files on disk even after the containers are removed. Run `docker compose up` again and your tasks are still there.
+---
+
+## API Reference
+
+### Auth Endpoints
+
+| Method | Endpoint | Description | Auth Required | Success Status | Error Status |
+|---|---|---|---|---|---|
+| POST | `/auth/signup` | Create a new user account | No | 201 | 400 missing fields |
+| POST | `/auth/login` | Authenticate and return a JWT | No | 200 | 400 missing fields · 401 invalid credentials |
+| POST | `/auth/logout` | End the user's session | Yes (Bearer) | 204 | 401 missing/invalid token |
+
+### Protected & Public Endpoints
+
+| Method | Endpoint | Description | Auth Required | Success Status | Error Status |
+|---|---|---|---|---|---|
+| GET | `/public/info` | Open, unauthenticated info | No | 200 | — |
+| GET | `/protected/profile` | Returns the logged-in user's own profile | Yes (Bearer) | 200 | 401 missing/invalid token |
+| GET | `/protected/dashboard` | Demonstrates the same auth guard reused on a second route | Yes (Bearer) | 200 | 401 missing/invalid token |
+
+### Task Endpoints (from A1–A3, unchanged)
+
+| Method | Endpoint | Description | Success Status | Error Status |
+|---|---|---|---|---|
+| GET | `/` | Root endpoint — describes the API | 200 | — |
+| GET | `/health` | Health check | 200 | — |
+| GET | `/tasks` | List tasks (supports `?search=`, `?done=`, sorted by title) | 200 | — |
+| GET | `/tasks/{id}` | Get a single task | 200 | 404 |
+| POST | `/tasks` | Create a task | 201 | 400 empty title |
+| PUT | `/tasks/{id}` | Update a task | 200 | 404 |
+| DELETE | `/tasks/{id}` | Delete a task | 204 | 404 |
+| GET | `/stats` | Task counts: total, done, open | 200 | — |
+
+**Note:** the task endpoints are not yet protected by auth in this stage — they remain open, same as A1–A3.
 
 ---
 
-## Environment Variables
+## How Authentication Works
 
-This project reads its database connection from a single environment variable:
+This project follows a trust triangle between three parties: the client, this server, and Supabase.
 
-| Variable | Description | Example |
-|---|---|---|
-| `DATABASE_URL` | Full Postgres connection string | `postgres://postgres:dev@db:5432/tasks` |
+1. **Sign up / Log in** — the client sends an email + password to this server, which forwards them to Supabase.
+2. **The token** — Supabase checks the credentials and returns a JWT (access token) + refresh token.
+3. **The request** — the client calls a protected route, attaching the JWT in the header: `Authorization: Bearer <token>`.
+4. **Verification** — this server asks Supabase, "is this token real?" via `supabase.auth.get_user(token)`. If valid, the route runs; if not, a `401` is returned.
 
-Copy `.env.example` to `.env` and fill in your own values before running. `.env` is git-ignored and should **never** be committed — it's where your real database password lives.
+This server never stores passwords or hashes anything itself — Supabase (the Identity Provider) handles all of that. The server's job is only to forward credentials and verify tokens.
+
+### Example Request (curl)
+
+**Sign up:**
+```
+curl -i -X POST http://localhost:8000/auth/signup \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@example.com","password":"password123"}'
+```
+
+**Log in:**
+```
+curl -i -X POST http://localhost:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@example.com","password":"password123"}'
+```
+Returns an `access_token` and `refresh_token`.
+
+**Access a protected route:**
+```
+curl -i http://localhost:8000/protected/profile \
+  -H "Authorization: Bearer <PASTE_ACCESS_TOKEN_HERE>"
+```
 
 ---
 
-## API Endpoints
+## Reusable Auth Guard
 
-| Method | Endpoint      | Description                                   | Success Status | Error Status                  |
-| ------ | ------------- | --------------------------------------------- | -------------- | ------------------------------ |
-| GET    | `/`           | Root endpoint — describes the API             | 200            | —                               |
-| GET    | `/health`     | Health check — confirms the server is alive   | 200            | —                               |
-| GET    | `/tasks`      | Returns tasks (supports `?search=` and `?done=` filters, sorted by title) | 200 | — |
-| GET    | `/tasks/{id}` | Returns a single task by ID                   | 200            | 404 if not found                |
-| POST   | `/tasks`      | Creates a new task (`title` required in body) | 201            | 400 if title is missing/empty  |
-| PUT    | `/tasks/{id}` | Updates an existing task's `title` and `done` | 200            | 404 if not found                |
-| DELETE | `/tasks/{id}` | Deletes a task by ID                          | 204            | 404 if not found                |
-| GET    | `/stats`      | Returns task counts: total, done, open        | 200            | —                                |
+Rather than repeating token-verification logic in every protected route, this project uses a single reusable FastAPI dependency, `get_current_user`, built on top of FastAPI's `HTTPBearer` security scheme:
 
-All endpoint behaviour is unchanged from A1/A2 — only the storage engine underneath changed, from an in-memory list, to SQLite, to Postgres. Error responses return:
+```python
+security = HTTPBearer()
 
-```
-{ "detail": "Task 99 not found" }
-```
-
----
-
-## Example Request (curl)
-
-**Creating a new task:**
-
-```
-curl -i -X POST http://localhost:8000/tasks -H "Content-Type: application/json" -d '{"title":"Buy milk"}'
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    try:
+        response = supabase.auth.get_user(token)
+        return {
+            "id": response.user.id,
+            "email": response.user.email,
+            "ac_created_date": response.user.created_at
+        }
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 ```
 
-**Response:**
+Every protected route simply adds `current_user = Depends(get_current_user)` as a parameter — no auth logic is ever duplicated. This is proven by `/protected/dashboard`, which reuses the exact same guard as `/protected/profile` with zero new auth code.
 
-```
-HTTP/1.1 201 Created
-content-type: application/json
-
-{"id":4,"title":"Buy milk","done":false}
-```
+Using `HTTPBearer` also means Swagger UI automatically shows a lock icon next to every protected route, with a working "Authorize" button.
 
 ---
 
 ## Swagger UI
 
-Interactive API documentation is available at:
-
+Interactive API documentation, including a bearer-token "Authorize" flow, is available at:
 ```
 http://localhost:8000/docs
 ```
 
-**Screenshot:**
-![Swagger UI](swagger-screenshot.png)
+**Screenshot:** ![alt text](image-4.png)
+
 ---
 
 ## The Database
 
-Postgres runs as its own container (service name `db` in `compose.yaml`), with one table:
+PostgreSQL runs as its own container, with one table for tasks:
 
 ```sql
 CREATE TABLE IF NOT EXISTS tasks (
@@ -124,61 +175,18 @@ CREATE TABLE IF NOT EXISTS tasks (
 )
 ```
 
-To look inside the database directly:
+User accounts, password hashing, and sessions are managed entirely by Supabase — this project's own database only stores task data, never user credentials.
 
-```
-docker exec -it be-a1-first-crud-api-db-1 psql -U postgres -d tasks -c "\dt"
-docker exec -it be-a1-first-crud-api-db-1 psql -U postgres -d tasks -c "SELECT * FROM tasks;"
-```
-
-**Screenshot:**
-![Database](db-screenshot.png)
+**Screenshot:** ![alt text](image-5.png)
 
 ---
 
-## Why Postgres (and Why Docker)?
+## Security Notes
 
-SQLite (A2) is a single file — simple, but only one process can write to it comfortably, and it doesn't reflect how most real backends run in production. PostgreSQL is a full database *server* — the same kind of engine that powers large-scale, multi-user applications, FlyRank included.
-
-Rather than installing Postgres directly onto the machine (version conflicts, "works on my machine" problems), it runs in a **Docker container**: a frozen, ready-made copy of Postgres that behaves identically on any machine. Docker Compose then lets both the app and the database start together, in the right order, with one command — no manual setup steps for anyone who clones this repo.
-
----
-
-## Persistence — Proving Data Survives a Full Stack Restart
-
-Unlike a plain container restart, this proves the *whole stack* can go down and come back with data intact:
-
-1. Create a task via `POST /tasks`.
-2. `docker compose down` — stops and removes both containers.
-3. `docker compose up` — rebuilds and starts both containers fresh.
-4. `GET /tasks` — the task is still there.
-
-This works because of the **volume** (`taskdata`) attached to the `db` service — it lives outside the container's lifecycle, so removing and recreating the container doesn't touch the actual data files.
-
----
-
-## A Real Debugging Story: The `depends_on` Gotcha
-
-Early on, `docker compose up` produced a `psycopg.OperationalError: connection failed... Connection refused`. The `api` container was starting *before* Postgres had finished initializing — `depends_on` alone only waits for a container to *start*, not for the database inside it to actually be ready to accept connections.
-
-The fix was adding a `healthcheck` to the `db` service (using `pg_isready`) and changing `api`'s `depends_on` to wait for `condition: service_healthy` instead of just the container starting. This is a common real-world Docker Compose issue — container "running" and service "ready" are two different things.
-
----
-
-## From A1 → A2 → A3 — What Changed
-
-| Layer     | A1 (Week 2)         | A2 (Week 3)              | A3 (this stage)                  |
-| --------- | -------------------- | -------------------------- | ---------------------------------- |
-| Storage   | Python list, in memory | SQLite file (`tasks.db`)  | PostgreSQL, in a Docker container |
-| Runs as   | part of the app itself | a file on disk             | its own server, in a container    |
-| IDs       | manually tracked counter | auto-assigned by SQLite   | auto-assigned by Postgres (`SERIAL`) |
-| Query placeholders | — | `?` | `%s` |
-| Secrets   | none                  | none                        | `.env` file, git-ignored           |
-| Startup   | `uvicorn main:app`   | `uvicorn main:app`         | `docker compose up`                |
-| Data on restart | gone            | still there                 | still there (via a volume)         |
-| Endpoints | GET/POST/PUT/DELETE `/tasks` | unchanged | unchanged |
-
-The client never notices any of this — the API's behaviour is identical across all three. Only where and how the data is stored has changed, which is the entire point of these three assignments.
+- The `anon` key (not the `service_role` key) is used from this app — the `anon` key is safe for client-facing use; the `service_role` key bypasses all security and must never be used here.
+- `.env` is git-ignored and confirmed to never appear in git history (`git log --all --full-history -- .env` returns empty).
+- `.env.example` is committed with placeholder values only, so anyone cloning the repo knows what to configure without exposing real secrets.
+- Passwords are never stored, hashed, or handled directly by this codebase — Supabase does all of that.
 
 ---
 
@@ -186,12 +194,11 @@ The client never notices any of this — the API's behaviour is identical across
 
 ```
 BE-A1-First-CRUD-API/
-├── main.py             # FastAPI app — all CRUD endpoints, now backed by Postgres
-├── Dockerfile           # Builds the app's own image
-├── compose.yaml         # Defines the api + db services and how they connect
+├── main.py             # FastAPI app — task CRUD + Supabase auth routes
+├── Dockerfile
+├── compose.yaml
 ├── requirements.txt
-├── .env.example          # Template for required environment variables
-├── .env                  # Real secrets (git-ignored, never committed)
-├── README.md
-└── index.html            # Frontend that consumes the API
+├── .env.example
+├── .env                  # git-ignored, never committed
+└── README.md
 ```
