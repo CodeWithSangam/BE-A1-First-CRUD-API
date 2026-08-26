@@ -8,6 +8,7 @@ from fastapi import Header, Depends
 # helps in loading the env file
 load_dotenv()
 import psycopg
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 app = FastAPI()
 
@@ -21,23 +22,21 @@ class AuthCredentials(BaseModel):
     email: str
     password: str
 
-async def get_current_user(authorization: str = Header(None)):
-    if authorization is None or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Access token required")
-    token = authorization.split("Bearer ",1)[1]
-    if not token:
-        raise HTTPException(status_code=401, detail="Access token required")
-        
+
+
+security = HTTPBearer()
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials  # yahan seedha token milega, "Bearer " nikaalne ki zaroorat nahi
     try:
         response = supabase.auth.get_user(token)
         return {
-                "id": response.user.id,
-                "email": response.user.email,
-                "ac_created_date": response.user.created_at
-            }
+            "id": response.user.id,
+            "email": response.user.email,
+            "ac_created_date": response.user.created_at
+        }
     except Exception as e:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
-    
 @app.post('/auth/logout',status_code=204)
 async def logout(current_user = Depends(get_current_user)):
     supabase.auth.sign_out()
