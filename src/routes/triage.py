@@ -1,9 +1,22 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator
 from src.llm.schema import TriageOutput, Category, Urgency, SuggestedTeam
+from openai import OpenAI
+from dotenv import load_dotenv
 import os
-
+import json
+import re
+load_dotenv()
 router = APIRouter()
+
+# Prompt file load karo
+with open("prompts/triage-v1.md", "r") as f:
+    SYSTEM_PROMPT = f.read()
+
+client = OpenAI(
+    base_url=os.getenv("LLM_BASE_URL"),
+    api_key=os.getenv("LLM_API_KEY")
+)
 
 class TriageInput(BaseModel):
     text: str
@@ -19,7 +32,7 @@ class TriageInput(BaseModel):
 
 @router.post('/triage', response_model=TriageOutput)
 async def triage(item: TriageInput):
-    # Stub mode - no AI call
+    # Stub mode
     if os.getenv("LLM_STUB") == "1":
         return TriageOutput(
             category=Category.billing,
@@ -28,6 +41,26 @@ async def triage(item: TriageInput):
             confidence=0.99,
             reason="This is a stub response for testing."
         )
+
+    # Real model call
+    response = client.chat.completions.create(
+        model=os.getenv("LLM_MODEL"),
+        temperature=0.2,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": item.text}
+        ]
+    )
+
+    # raw text se JSON nikalo
+    raw = response.choices[0].message.content
+
+    # code fence strip karo
+    cleaned = re.sub(r"```json|```", "", raw).strip()
+
+    # parse karo
+    data = json.loads(cleaned)
+
+    return TriageOutput(**data)
     
-    # Real AI call aayega Stage 2 mein
-    raise HTTPException(status_code=501, detail="AI not wired yet")
+
