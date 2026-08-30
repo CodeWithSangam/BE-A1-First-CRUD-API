@@ -1,15 +1,16 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator
 from src.llm.schema import TriageOutput, Category, Urgency, SuggestedTeam
+from src.llm.parser import parse_and_validate, quarantine
 from openai import OpenAI
 from dotenv import load_dotenv
 import os
-import json
-import re
+
 load_dotenv()
 router = APIRouter()
 
-# Prompt file load karo
+PROMPT_VERSION = "triage-v1"
+
 with open("prompts/triage-v1.md", "r") as f:
     SYSTEM_PROMPT = f.read()
 
@@ -30,6 +31,14 @@ class TriageInput(BaseModel):
             raise ValueError('text cannot exceed 2000 characters')
         return v
 
+def call_model(messages):
+    response = client.chat.completions.create(
+        model=os.getenv("LLM_MODEL"),
+        temperature=0.2,
+        messages=messages
+    )
+    return response.choices[0].message.content
+
 @router.post('/triage', response_model=TriageOutput)
 async def triage(item: TriageInput):
     # Stub mode
@@ -42,25 +51,27 @@ async def triage(item: TriageInput):
             reason="This is a stub response for testing."
         )
 
-    # Real model call
-    response = client.chat.completions.create(
-        model=os.getenv("LLM_MODEL"),
-        temperature=0.2,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": item.text}
-        ]
-    )
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": item.text}
+    ]
 
-    # raw text se JSON nikalo
-    raw = response.choices[0].message.content
+    # First attempt
+    raw = call_model(messages)
+    try:
+        return parse_and_validate(raw)
+    except Exception as e:
+        first_error = str(e)
 
-    # code fence strip karo
-    cleaned = re.sub(r"```json|```", "", raw).strip()
-
-    # parse karo
-    data = json.loads(cleaned)
-
-    return TriageOutput(**data)
-    
-
+    # Repair retry - ek baar aur try
+    repair_messages = messages + [
+        {"role": "assistant", "content": raw},
+        {"role": "user", "content": f"Your previous answer was rejected for this reason: {first_error}. Return only corrected JSON matching the schema."}
+    ]
+    raw2 = call_model(repair_messages)
+    try:
+        return parse_and_validate(raw2)
+    except Exception as e:
+        # Dono fail — quarantine karo
+        quarantine(item.text, raw2, str(e), PROMPT_VERSION)
+        raise HTTPException(status_code=422, detail="Model returned invalid response after repair. Logged to quarantine.")
