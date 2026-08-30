@@ -5,13 +5,14 @@ from supabase import create_client
 from dotenv import load_dotenv
 import os
 from fastapi import Header, Depends
+
 # helps in loading the env file
 load_dotenv()
 import psycopg
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-
+from src.routes.triage import router as triage_router
 app = FastAPI()
-
+app.include_router(triage_router)
 url = os.getenv("SUPABASE_URL")
 key = os.getenv("SUPABASE_KEY")
 
