@@ -160,6 +160,22 @@ async def make_report(ctx: inngest.Context) -> str:
 
     await ctx.step.run("build-report", build)  # Runs the report-building operation as an Inngest step.
     return "complete"
+@inngest_client.create_function(
+    fn_id="heartbeat",
+    trigger=inngest.TriggerCron(cron="* * * * *"),  # Runs every minute.
+)
+async def heartbeat(ctx: inngest.Context) -> str:
+    """
+    Purpose:
+    A scheduled cron function that runs every minute and logs
+    a summary of all current report statuses.
+    """
+    pending = sum(1 for r in reports.values() if r["status"] == "pending")  # Counts pending reports.
+    done = sum(1 for r in reports.values() if r["status"] == "done")  # Counts completed reports.
+
+    print(f"[Heartbeat] Reports — pending: {pending}, done: {done}")  # Logs the summary line.
+
+    return f"pending={pending} done={done}"  # Returns the summary as the function result.
 # ==============================
 # REPORT ENDPOINTS
 # ==============================
@@ -551,5 +567,5 @@ app.include_router(triage_router)  # Adds all endpoints defined inside the triag
 inngest.fast_api.serve(
     app,
     inngest_client,
-    [say_hello, make_report],
+    [say_hello, make_report, heartbeat],
 )  # Registers the Inngest functions with FastAPI; note that the extra comma in [say_hello, , make_report] was fixed.
