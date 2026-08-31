@@ -2,22 +2,19 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator
 from src.llm.schema import TriageOutput, Category, Urgency, SuggestedTeam
 from src.llm.parser import parse_and_validate, quarantine
-from openai import OpenAI
+from src.llm.client import call_with_retry
 from dotenv import load_dotenv
+import logging
 import os
 
 load_dotenv()
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 PROMPT_VERSION = "triage-v1"
 
 with open("prompts/triage-v1.md", "r") as f:
     SYSTEM_PROMPT = f.read()
-
-client = OpenAI(
-    base_url=os.getenv("LLM_BASE_URL"),
-    api_key=os.getenv("LLM_API_KEY")
-)
 
 class TriageInput(BaseModel):
     text: str
@@ -31,16 +28,12 @@ class TriageInput(BaseModel):
             raise ValueError('text cannot exceed 2000 characters')
         return v
 
-def call_model(messages):
-    response = client.chat.completions.create(
-        model=os.getenv("LLM_MODEL"),
-        temperature=0.2,
-        messages=messages
-    )
-    return response.choices[0].message.content
-
 @router.post('/triage', response_model=TriageOutput)
 async def triage(item: TriageInput):
+    # Kill switch
+    if os.getenv("LLM_ENABLED", "true").lower() == "false":
+        raise HTTPException(status_code=503, detail="LLM is currently disabled.")
+
     # Stub mode
     if os.getenv("LLM_STUB") == "1":
         return TriageOutput(
@@ -51,27 +44,41 @@ async def triage(item: TriageInput):
             reason="This is a stub response for testing."
         )
 
+    model = os.getenv("LLM_MODEL")
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": item.text}
     ]
 
     # First attempt
-    raw = call_model(messages)
+    try:
+        raw, cost = call_with_retry(messages, model)
+        logger.info(f"Cost log | prompt_version={PROMPT_VERSION} model={cost['model']} "
+                   f"input_tokens={cost['prompt_tokens']} output_tokens={cost['completion_tokens']} "
+                   f"duration_ms={cost['duration_ms']} repair=False")
+    except Exception as e:
+        raise HTTPException(status_code=504, detail=f"Model call failed: {str(e)}")
+
     try:
         return parse_and_validate(raw)
     except Exception as e:
         first_error = str(e)
 
-    # Repair retry - ek baar aur try
+    # Repair retry
     repair_messages = messages + [
         {"role": "assistant", "content": raw},
-        {"role": "user", "content": f"Your previous answer was rejected for this reason: {first_error}. Return only corrected JSON matching the schema."}
+        {"role": "user", "content": f"Your previous answer was rejected: {first_error}. Return only corrected JSON matching the schema."}
     ]
-    raw2 = call_model(repair_messages)
+    try:
+        raw2, cost2 = call_with_retry(repair_messages, model)
+        logger.info(f"Cost log | prompt_version={PROMPT_VERSION} model={cost2['model']} "
+                   f"input_tokens={cost2['prompt_tokens']} output_tokens={cost2['completion_tokens']} "
+                   f"duration_ms={cost2['duration_ms']} repair=True")
+    except Exception as e:
+        raise HTTPException(status_code=504, detail=f"Repair call failed: {str(e)}")
+
     try:
         return parse_and_validate(raw2)
     except Exception as e:
-        # Dono fail — quarantine karo
         quarantine(item.text, raw2, str(e), PROMPT_VERSION)
         raise HTTPException(status_code=422, detail="Model returned invalid response after repair. Logged to quarantine.")
