@@ -250,11 +250,55 @@ Expected response:
 - Add `Retry-After` header handling in retry logic
 - Improve prompt for ambiguous cases like vague complaints
 
-### Stage 3 sentence:
+---
 
-Bad input (missing topic) is rejected at the door with a 400 error and no job is created — only a wrong moment (network hiccup, service failure) deserves a retry, not a wrong input.
+## A7 — Background Jobs with Inngest
 
-### Stage 4 sentences:
+Moves slow work out of the request into a background job. The endpoint answers instantly with 202, Inngest does the work, a status endpoint reports the result.
 
-To run heartbeat every day at 08:00: 0 8 * * *
-To run heartbeat every Sunday at 22:00: 0 22 * * 0
+### How to Run
+
+**Terminal 1 — Start the API:**
+```bash
+INNGEST_DEV=1 PYTHONPATH=. uvicorn main:app --reload --port 8001
+```
+
+**Terminal 2 — Start Inngest Dev Server:**
+```bash
+npx inngest-cli@latest dev -u http://localhost:8001/api/inngest
+```
+
+### Endpoints & Functions
+
+| Type | Method | Path | Description |
+|---|---|---|---|
+| Endpoint | POST | `/reports` | Accepts a topic, returns 202 + id instantly |
+| Endpoint | GET | `/reports/{id}` | Returns pending or done + result |
+| Function | — | `make-report` | Background job, 8s sleep, builds report |
+| Function | — | `say-hello` | Test function, 5s sleep |
+| Function | — | `heartbeat` | Cron job, runs every minute |
+
+### 202 Proof
+
+```bash
+# Step 1 - Create report (instant 202)
+curl -X POST http://localhost:8001/reports \
+  -H "Content-Type: application/json" \
+  -d '{"topic": "cats"}'
+# {"id":"0f71d0e5-...","status":"pending"}
+
+# Step 2 - Poll immediately (pending)
+curl http://localhost:8001/reports/0f71d0e5-...
+# {"id":"...","topic":"cats","status":"pending"}
+
+# Step 3 - Poll after 10s (done)
+curl http://localhost:8001/reports/0f71d0e5-...
+# {"id":"...","topic":"cats","status":"done","result":"Report on 'cats' is ready!"}
+```
+
+### Stage 3 — Retry vs Bad Input
+Bad input (missing or empty topic) is rejected at the door with a 400 error and no job is created — only a wrong moment (network hiccup, service failure) deserves a retry, not a wrong input.
+
+### Stage 4 — Cron Expressions
+- Every day at 08:00: `0 8 * * *`
+- Every Sunday at 22:00: `0 22 * * 0`
