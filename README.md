@@ -249,3 +249,12 @@ Expected response:
 ### What I'd fix with another day
 - Add `Retry-After` header handling in retry logic
 - Improve prompt for ambiguous cases like vague complaints
+
+### Stage 3 sentence:
+
+Bad input (missing topic) is rejected at the door with a 400 error and no job is created — only a wrong moment (network hiccup, service failure) deserves a retry, not a wrong input.
+
+### Stage 4 sentences:
+
+To run heartbeat every day at 08:00: 0 8 * * *
+To run heartbeat every Sunday at 22:00: 0 22 * * 0
