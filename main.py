@@ -130,12 +130,14 @@ async def say_hello(ctx: inngest.Context) -> str:
 @inngest_client.create_function(
     fn_id="make-report",
     trigger=inngest.TriggerEvent(event="report/requested"),
+    retries=2,  # 2 retries = 3 total attempts
 )
 async def make_report(ctx: inngest.Context) -> str:
     """
     Purpose:
     This background function receives a report/requested event,
     performs the slow report-building work, and updates the report status.
+    Retries 2 times on failure (3 total attempts).
     """
     await ctx.step.sleep("do-the-slow-work", 8)  # Simulates slow report generation for 8 seconds.
 
@@ -144,18 +146,20 @@ async def make_report(ctx: inngest.Context) -> str:
         report_id = ctx.event.data["id"]  # Gets the report ID from the Inngest event.
         topic = ctx.event.data["topic"]  # Gets the report topic from the Inngest event.
 
-        reports[report_id] = {  # Updates the report stored in memory.
-            "id": report_id,  # Saves the report ID.
-            "topic": topic,  # Saves the report topic.
-            "status": "done",  # Changes the report status to done.
-            "result": f"Report on '{topic}' is ready!",  # Saves a simple generated result.
-        }
+        # Fail case — topic "fail" triggers an error to demonstrate retry behavior.
+        if topic == "fail":
+            raise Exception("The report oven is broken!")
 
-        return "done"  # Tells Inngest that the report-building step completed.
+        reports[report_id] = {  # Updates the report stored in memory.
+            "id": report_id,
+            "topic": topic,
+            "status": "done",
+            "result": f"Report on '{topic}' is ready!",
+        }
+        return "done"
 
     await ctx.step.run("build-report", build)  # Runs the report-building operation as an Inngest step.
-    return "complete"  # Returns the final background-job status.
-
+    return "complete"
 # ==============================
 # REPORT ENDPOINTS
 # ==============================
