@@ -1,0 +1,34 @@
+[
+  {
+    "input": "I was charged twice for my subscription this month",
+    "expected_category": "billing"
+  },
+  {
+    "input": "The app crashes every time I click the submit button",
+    "expected_category": "bug"
+  },
+  {
+    "input": "Can you please add a dark mode to the app?",
+    "expected_category": "feature_request"
+  },
+  {
+    "input": "Your website is down, getting 503 error",
+    "expected_category": "outage"
+  },
+  {
+    "input": "I need an invoice for my last payment",
+    "expected_category": "billing"
+  },
+  {
+    "input": "Login page is not loading since last hour",
+    "expected_category": "outage"
+  },
+  {
+    "input": "Your product is not great",
+    "expected_category": "feature_request"
+  },
+  {
+    "input": "I cannot export my data to CSV",
+    "expected_category": "bug"
+  }
+]
