@@ -11,7 +11,22 @@ load_dotenv()
 import psycopg
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from src.routes.triage import router as triage_router
+import inngest
+import inngest.fast_api
+
+inngest_client = inngest.Inngest(app_id="report-api")
+# inngest_client = inngest.Inngest(app_id="report-api", is_dev=True)
+# inngest_client = inngest.Inngest(app_id="report-api", dev=True)
+
+@inngest_client.create_function(
+    fn_id="say-hello",
+    trigger=inngest.TriggerEvent(event="test/hello"),
+)
+async def say_hello(ctx: inngest.Context, step: inngest.Step) -> str:
+    await step.sleep("wait-a-moment", 5)
+    return "Hello from the background!"
 app = FastAPI()
+inngest.fast_api.serve(app, inngest_client, [say_hello])
 app.include_router(triage_router)
 url = os.getenv("SUPABASE_URL")
 key = os.getenv("SUPABASE_KEY")
