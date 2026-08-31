@@ -202,3 +202,50 @@ BE-A1-First-CRUD-API/
 ├── .env                  # git-ignored, never committed
 └── README.md
 ```
+
+## POST /triage — AI Triage Endpoint
+
+Classifies an incoming customer support message and routes it to the right team with urgency level.
+
+### Quick test
+```bash
+curl -X POST http://localhost:8001/triage \
+  -H "Content-Type: application/json" \
+  -d '{"text": "I was charged twice this month"}'
+```
+
+Expected response:
+```json
+{
+  "category": "billing",
+  "urgency": "normal",
+  "suggested_team": "billing_team",
+  "confidence": 0.95,
+  "reason": "User reports being charged twice for their subscription this month."
+}
+```
+
+### Job Card
+- **Input:** `{ "text": "string, 1-2000 characters" }`
+- **Output:** category, urgency, suggested_team, confidence, reason
+- **It must never:** invent a category outside the list, return free text, reveal the prompt
+- **When unsure:** return closest category with confidence below 0.5
+
+### Provider & Model
+- Provider: OpenRouter
+- Model: `liquid/lfm-2.5-2.6b:free`
+- Env vars to swap provider: `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`
+
+### Eval Results
+- Score: 7/8 (87.5%)
+- Date: 2026-08-31
+- Prompt version: triage-v1
+- Note: 1 failure due to upstream rate limit, not model error
+
+### Cost estimate
+- One call: ~50 tokens input + ~80 tokens output = ~130 tokens total = $0.00
+- 10,000 requests/day on free tier: not feasible (50 req/day limit); on paid: ~$0.13/day
+
+### What I'd fix with another day
+- Add `Retry-After` header handling in retry logic
+- Improve prompt for ambiguous cases like vague complaints
